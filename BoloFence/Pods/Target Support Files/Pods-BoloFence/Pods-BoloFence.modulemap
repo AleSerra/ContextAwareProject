@@ -1,0 +1,6 @@
+module Pods_BoloFence {
+  umbrella header "Pods-BoloFence-umbrella.h"
+
+  export *
+  module * { export * }
+}
