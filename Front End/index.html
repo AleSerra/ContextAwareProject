@@ -1,0 +1,340 @@
+<html lang="en">
+  <head>
+      <link rel="stylesheet" href="https://openlayers.org/en/v4.6.5/css/ol.css" type="text/css">
+  <style>
+      .map {
+        height: 86%;
+        width: 100%;
+      }
+    </style>
+    <script src="https://openlayers.org/en/v4.6.5/build/ol.js" type="text/javascript"></script>
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.5.0.min.js"></script>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+    <title>GEOJSON example</title>
+    </head>
+  
+  
+  <body>
+    <h2 style="text-align: center;">Front-End Admin ContextAwareProject</h2>
+    <div style="text-align: center;">
+      
+      <div class="alert alert-secondary" role="alert" style="width: 30%; display: inline-block;">
+        Select Geofence: 
+        <button onclick="loadGeoFence('walk')" class="btn btn-success">Walk</button>
+        <button onclick="loadGeoFence('bike')" class="btn btn-primary">Bike</button>
+        <button onclick="loadGeoFence('car')" class="btn btn-danger">Car</button>
+        <button onclick="removeGeofence()" class="btn btn-dark">Remove</button>
+      </div>
+
+      <div class="alert alert-secondary" role="alert" style="width: 30%; display: inline-block;">
+        Select Clusters:
+        <button onclick="loadClustersKMeans('walk')" class="btn btn-success">Walk</button>
+        <button onclick="loadClustersKMeans('bike')" class="btn btn-primary">Bike</button>
+        <button onclick="loadClustersKMeans('car')" class="btn btn-danger">Car</button>
+        <button onclick="removeCluster()" class="btn btn-dark">Remove</button>
+      </div>
+
+      <div class="alert alert-secondary" role="alert" style="width: 38%; display: inline-block;">
+        <select id="users" onchange="userSelected()" class="custom-select" style="width: 40%; display: inline-block">
+          <option value="default">Select User</option>
+        </select>
+        <select id="activity" onchange="loadPath()" class="custom-select" style="visibility: hidden; width: 40%; display: inline-block">
+          <option value="default">Activity</option>
+          <option value="walk">Walk</option>
+          <option value="bike">Bike</option>
+          <option value="car">Car</option>
+        </select>
+        <button onclick="removePath()" class="btn btn-dark">Remove</button>
+      </div>
+    </div>
+    <div id="map" class="map"></div>
+    <!-- Map embedding -->
+    <script type="text/javascript">
+      
+      var map = new ol.Map({
+	       target: 'map',
+        layers: [
+            new ol.layer.Tile({
+              source: new ol.source.OSM()
+            })
+        ],
+        view: new ol.View({
+            center: ol.proj.fromLonLat([11.3445425,44.4942094]),
+            zoom: 15
+       	})
+      });
+      
+      
+      var format = new ol.format.GeoJSON({
+	       featureProjection:"EPSG:3857"
+      });
+      
+      var geoColor = {
+        bike: '0, 0, 180',
+        car: '180, 0, 0',
+        walk: '0, 180, 0'
+      }
+
+
+      var geoLayer = {
+        bike: [],
+        car: [],
+        walk: []
+      };
+
+      var last="car";
+      
+      function loadData(myData, param) {
+        $.ajax({
+            type:"GET",//or POST
+            url:'http://localhost:3600/getgeofencestats',
+            data: { 
+              activity: param, 
+            },
+            success:function(responsedata){
+                  removeGeofence();
+                  for(i=0; i<myData["features"].length; i++)
+                  {
+                    let j;
+                    var intensity=0;
+                    for(j=0; j<responsedata.length; j++)
+                    {
+                      if(responsedata[j]["gid"]==myData["features"][i]["id"])
+                        intensity=responsedata[j]["perc"]*0.9;
+                    }
+                    
+                    var _myFill = new ol.style.Fill({
+                      color: 'rgba('+geoColor[param]+', '+intensity+')'
+                    });
+
+                    var _myStroke = new ol.style.Stroke({
+                      color : 'rgba('+geoColor[param]+', 1)',
+                      width : 2    
+                    });
+
+                    var myStyle = new ol.style.Style({
+                      stroke : _myStroke,
+                      fill : _myFill
+                    });
+                    var vectorSource = new ol.source.Vector({
+                      features:format.readFeatures(myData["features"][i])
+                    });
+                    
+                    geoLayer[param][i]=new ol.layer.Vector({
+                      title: 'GeoJSON Layer',
+                      source: vectorSource,
+                      style: myStyle
+                    });
+
+                    
+                    geoLayer[param][i].setVisible(true);                    
+                    map.addLayer(geoLayer[param][i]);
+                  } 
+                  last=param;
+                  console.log(last);                 
+            }
+         })
+      }
+
+      function loadGeoFence(param) {
+        $.ajax({
+            type:"GET",
+            url:'http://localhost:3600/getgeofences',
+            data: { 
+              activity: param, 
+            },
+            success:function(responsedata){
+                   console.log(responsedata);
+                   loadData(responsedata, param);
+
+            }
+         })
+      }
+
+      function removeGeofence() {
+        let i;
+        for(i=0; i<geoLayer[last].length; i++)
+        {
+          map.removeLayer(geoLayer[last][i]);
+        }
+      }
+
+      function userSelected() {
+        removePath();
+        var selected = document.getElementById("users").value;
+        var activityList = document.getElementById("activity");
+        if(selected=="default")
+        {
+          activityList.style.visibility="hidden";
+        }
+        else
+        {
+          activityList.style.visibility="visible";
+          activityList.selectedIndex = 0;
+        }
+        console.log(selected);
+      }
+
+      var pathLayer;
+
+      var _myFillPath = new ol.style.Fill({
+        color: 'rgba(0,0,0,0)'
+      });
+
+      var geoUserColor = {
+        bike: '0, 0, 230',
+        car: '230, 0, 0',
+        walk: '0, 230, 0'
+      }
+
+      function removePath(){
+        map.removeLayer(pathLayer);
+      }
+      
+      function loadPathData(myData, param) {
+        var vectorSource = new ol.source.Vector({
+         features:format.readFeatures(myData)
+        });
+
+        var _myStrokePath = new ol.style.Stroke({
+          color : 'rgba('+geoUserColor[param]+', 1)',
+          width : 5    
+        });
+      
+        var myStylePath = new ol.style.Style({
+          stroke : _myStrokePath,
+          fill : _myFillPath
+        });
+
+        removePath();
+        pathLayer=new ol.layer.Vector({
+          title: 'GeoJSON Layer',
+          source: vectorSource,
+          style: myStylePath
+        });
+
+        pathLayer.setVisible(true);
+        map.addLayer(pathLayer);
+      }
+
+      function loadPath() {
+        var selected = document.getElementById("activity").value;
+        if(selected!="default")
+        {
+          $.ajax({
+            type:"GET",
+            url:'http://localhost:3600/getuserpath',
+            data: { 
+              activity: selected,
+              username: document.getElementById("users").value,
+            },
+            success:function(responsedata){
+                   console.log(responsedata);
+                   loadPathData(responsedata, selected);
+
+            }
+         })
+        }
+      }
+
+      var geoClusterColor = {
+        bike: '0, 0, 130',
+        car: '130, 0, 0',
+        walk: '0, 130, 0'
+      }
+
+
+      var geoClusterLayer = {
+        bike: [],
+        car: [],
+        walk: []
+      };
+
+      var lastCluster="car";
+
+      function loadClusterData(myData, param) {
+        removeCluster();
+        for(i=0; i<myData["features"].length; i++)
+        {
+          var _myFill = new ol.style.Fill({
+            color: 'rgba('+geoClusterColor[param]+', 0.5)'
+          });
+
+          var _myStroke = new ol.style.Stroke({
+            color : 'rgba('+geoClusterColor[param]+', 1)',
+            width : 2    
+          });
+
+          var myStyle = new ol.style.Style({
+            stroke : _myStroke,
+            fill : _myFill
+          });
+          var vectorSource = new ol.source.Vector({
+            features:format.readFeatures(myData["features"][i])
+          });
+
+          geoClusterLayer[param][i]=new ol.layer.Vector({
+            title: 'GeoJSON Layer',
+            source: vectorSource,
+            style: myStyle
+          });
+
+          geoClusterLayer[param][i].setVisible(true);
+          map.addLayer(geoClusterLayer[param][i]);
+        } 
+        lastCluster=param;
+        console.log(last);
+      }
+
+      function loadClustersKMeans(param) {
+        $.ajax({
+            type:"GET",
+            url:'http://localhost:3600/getclusterkmeans',
+            data: { 
+              activity: param, 
+            },
+            success:function(responsedata){
+                   console.log(responsedata);
+                   loadClusterData(responsedata, param);
+
+            }
+         })
+      }
+
+      function removeCluster() {
+        let i;
+        for(i=0; i<geoClusterLayer[lastCluster].length; i++)
+        {
+          map.removeLayer(geoClusterLayer[lastCluster][i]);
+        }
+      }
+
+      $( document ).ready(function(){
+          $.ajax({
+            type:"GET",
+            url:'http://localhost:3600/getusernames',
+            success:function(responsedata){
+                    console.log(responsedata);
+                    var users = document.getElementById("users");
+                    var optionAll = document.createElement("option");
+                    optionAll.value = "all";
+                    optionAll.text = "All Users";
+                    users.add(optionAll);
+                    let i;
+                    for(i=0; i < responsedata.length; i++)
+                    {
+                      var option = document.createElement("option");
+                      option.value = responsedata[i]['username'];
+                      option.text = responsedata[i]['username'];
+                      users.add(option);
+                    }
+                    console.log(users);
+
+            }
+         })
+      })
+        
+    </script>
+  </body>
+</html>
